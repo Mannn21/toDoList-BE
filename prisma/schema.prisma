@@ -39,7 +39,7 @@ model Activities {
   user User @relation(references: [id], fields: [user_id])
   category Category @relation(references: [id], fields: [category_id])
   completed Boolean @default(false)
-  date DateTime
+  date DateTime @default(now())
   createdAt DateTime @default(now())
 }
 

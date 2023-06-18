@@ -6,4 +6,12 @@ const router = express.Router()
 
 router.get("/", activitiesController.getActivities)
 
+router.post('/', activitiesController.createActivity)
+router.post('/search', activitiesController.getActivitiesByQuery)
+
+router.put('/', activitiesController.updateActivity)
+router.put('/status', activitiesController.updateStatusCompleted)
+
+router.delete('/', activitiesController.deleteActivity)
+
 export default router
