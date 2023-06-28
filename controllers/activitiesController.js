@@ -6,15 +6,45 @@ import { searchUserById } from "../utils/getUserById.js";
 
 const prisma = new PrismaClient();
 
-const getActivities = async (req, res) => {
+const getActivitiesByDateNow = async (req, res) => {
 	try {
-		const search = await prisma.activities.findMany();
-		if (search.length < 1) {
-			return response(404, "No data activity", null, "Not found", res);
+		const { userId } = req.session;
+		const refreshToken = req.cookies.refreshToken;
+		if (!userId || !refreshToken) {
+			return response(400, "Missing required datas", null, "Bad request", res);
 		}
-		if (search) {
-			const data = await getPromiseData(search);
-			return response(200, "Get Activities Success", data, "Ok", res);
+		if (userId && refreshToken) {
+			const searchUser = await searchUserById(userId);
+			if (!searchUser) {
+				return response(404, "No datas users", null, "Not found", res);
+			}
+			if (searchUser) {
+				try {
+					const dateNow = new Date();
+					const dd = dateNow.getDate();
+					const mm = dateNow.getMonth() + 1;
+					const yy = dateNow.getFullYear();
+					const now = `${yy}-0${mm}-${dd}`;
+					const search = await prisma.$queryRaw(Prisma.sql`
+					SELECT * FROM Activities WHERE user_id = ${userId} AND DATE(date) = ${now} ORDER BY TIME(date) ASC
+					`);
+					if (search.length < 1) {
+						return response(
+							200,
+							"No datas activity",
+							null,
+							"Please Create Activity First",
+							res
+						);
+					}
+					if (search.length >= 1) {
+						const data = await getPromiseData(search);
+						return response(200, "Get Activities Success", data, "Ok", res);
+					}
+				} catch (err) {
+					return response(500, err, null, "Internal server error", res);
+				}
+			}
 		}
 	} catch (err) {
 		if (err.code === "ECONNREFUSED") {
@@ -38,29 +68,43 @@ const getActivities = async (req, res) => {
 
 const getActivitiesByUser = async (req, res) => {
 	try {
-		const { userId } = req.body;
-		if (!userId) {
+		const { userId } = req.session;
+		const refreshToken = req.cookies.refreshToken;
+		if (!userId || !refreshToken) {
 			return response(400, "Missing required datas", null, "Bad request", res);
 		}
-		if (userId) {
-			try {
-				const search = await prisma.activities.findMany({
-					where: {
-						user_id: userId,
-					},
-				});
-				if (!search) {
-					return response(404, "No datas activity", null, "Not found", res);
+		if (userId && refreshToken) {
+			const searchUser = await searchUserById(userId);
+			if (!searchUser) {
+				return response(404, "No datas users", null, "Not found", res);
+			}
+			if (searchUser) {
+				try {
+					const search = await prisma.activities.findMany({
+						where: {
+							user_id: userId,
+						},
+						orderBy: [{ date: "asc" }, { date: "desc" }],
+					});
+					if (!search) {
+						return response(404, "No datas activity", null, "Not found", res);
+					}
+					if (search.length < 1) {
+						return response(
+							200,
+							"No datas activity",
+							null,
+							"Please Create Activity First",
+							res
+						);
+					}
+					if (search.length >= 1) {
+						const data = await getPromiseData(search);
+						return response(200, "Get Activities Success", data, "Ok", res);
+					}
+				} catch (err) {
+					return response(500, err, null, "Internal server error", res);
 				}
-				if (search.length < 1) {
-					return response(404, "No datas activity", null, "Not found", res);
-				}
-				if (search.length >= 1) {
-					const data = await getPromiseData(search);
-					return response(200, "Get Activities Success", data, "Ok", res);
-				}
-			} catch (err) {
-				return response(500, err, null, "Internal server error", res);
 			}
 		}
 	} catch (err) {
@@ -91,7 +135,7 @@ const getActivitiesByQuery = async (req, res) => {
 		}
 		if (userId) {
 			try {
-				const searchUser = searchUserById(userId)
+				const searchUser = await searchUserById(userId);
 				if (!searchUser) {
 					return response(404, "No datas users", null, "Not found", res);
 				}
@@ -105,12 +149,12 @@ const getActivitiesByQuery = async (req, res) => {
 									completed: status,
 								},
 							});
-							if (searchByStatus.length < 1) {
+							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -120,19 +164,19 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && category && !statusStr && !date && !createdAt) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const searchByCategory = await prisma.activities.findMany({
 								where: {
 									user_id: searchUser.id,
 									category_id: searchCategory.id,
 								},
 							});
-							if (searchByCategory.length < 1) {
+							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -147,10 +191,10 @@ const getActivitiesByQuery = async (req, res) => {
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -165,10 +209,10 @@ const getActivitiesByQuery = async (req, res) => {
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -178,16 +222,16 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && category && date && !statusStr && !createdAt) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.$queryRaw(Prisma.sql`
 								SELECT * FROM Activities WHERE user_id = ${userId} AND DATE(date) = ${date} AND category_id = ${searchCategory.id}
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -197,16 +241,16 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && category && createdAt && !statusStr && !date) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.$queryRaw(Prisma.sql`
 								SELECT * FROM Activities WHERE user_id = ${userId} AND DATE(createdAt) = ${createdAt} AND category_id = ${searchCategory.id}
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -216,7 +260,7 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && statusStr && category && !date && !createdAt) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.activities.findMany({
 								where: {
 									user_id: searchUser.id,
@@ -226,10 +270,10 @@ const getActivitiesByQuery = async (req, res) => {
 							});
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -244,10 +288,10 @@ const getActivitiesByQuery = async (req, res) => {
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -262,10 +306,10 @@ const getActivitiesByQuery = async (req, res) => {
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -280,10 +324,10 @@ const getActivitiesByQuery = async (req, res) => {
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -293,16 +337,16 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && statusStr && category && createdAt && !date) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.$queryRaw(Prisma.sql`
 								SELECT * FROM Activities WHERE user_id = ${userId} AND category_id = ${searchCategory.id} AND DATE(createdAt) = ${createdAt} AND completed = ${status}
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -312,16 +356,16 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && statusStr && category && date && !createdAt) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.$queryRaw(Prisma.sql`
 								SELECT * FROM Activities WHERE user_id = ${userId} AND category_id = ${searchCategory.id} AND DATE(date) = ${date} AND completed = ${status}
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -336,10 +380,10 @@ const getActivitiesByQuery = async (req, res) => {
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -349,16 +393,16 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && category && createdAt && date && !statusStr) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.$queryRaw(Prisma.sql`
 								SELECT * FROM Activities WHERE user_id = ${userId} AND category_id = ${searchCategory.id} AND DATE(date) = ${date} AND DATE(createdAt) = ${createdAt}
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -368,16 +412,16 @@ const getActivitiesByQuery = async (req, res) => {
 							}
 						}
 						if (userId && statusStr && category && date && createdAt) {
-							const searchCategory = searchCategoryById(category);
+							const searchCategory = await searchCategoryById(category);
 							const search = await prisma.$queryRaw(Prisma.sql`
 								SELECT * FROM Activities WHERE user_id = ${userId} AND category_id = ${searchCategory.id} AND DATE(date) = ${date} AND completed = ${status} AND DATE(createdAt) = ${createdAt}
 							`);
 							if (search.length < 1) {
 								return response(
-									404,
+									200,
 									"No datas activity",
 									null,
-									"Not found",
+									"Please Create Activity First",
 									res
 								);
 							}
@@ -421,13 +465,13 @@ const createActivity = async (req, res) => {
 			return response(400, "Missing required datas", null, "Bad request", res);
 		}
 		if (title && userId && category && date) {
-			const searchUser = searchUserById(userId)
+			const searchUser = await searchUserById(userId);
 			if (!searchUser) {
 				return response(404, "No datas user", null, "Not found", res);
 			}
 			if (searchUser) {
 				try {
-					const searchCategory = searchCategoryById(category);
+					const searchCategory = await searchCategoryById(category);
 					if (!searchCategory) {
 						return response(404, "No datas category", null, "Not found", res);
 					}
@@ -483,7 +527,7 @@ const updateActivity = async (req, res) => {
 			return response(400, "Missing required datas", null, "Bad request", res);
 		}
 		if (userId && id && title && category && date) {
-			const searchUser = searchUserById(userId)
+			const searchUser = await searchUserById(userId);
 			if (!searchUser) {
 				return response(404, "No datas user", null, "Not found", res);
 			}
@@ -498,7 +542,7 @@ const updateActivity = async (req, res) => {
 					return response(404, "No datas activity", null, "Not found", res);
 				}
 				if (searchActivity) {
-					const searchCategory = searchCategoryById(category);
+					const searchCategory = await searchCategoryById(category);
 					if (!searchCategory) {
 						return response(404, "No datas category", null, "Not found", res);
 					}
@@ -550,12 +594,12 @@ const updateActivity = async (req, res) => {
 
 const deleteActivity = async (req, res) => {
 	try {
-		const { userId, id, category } = req.body;
+		const { id, category, userId } = req.params;
 		if (!userId || !id || !category) {
 			return response(400, "Missing required datas", null, "Bad request", res);
 		}
 		if (userId && id && category) {
-			const searchUser = searchUserById(userId)
+			const searchUser = await searchUserById(userId);
 			if (!searchUser) {
 				return response(404, "No datas user", null, "Not found", res);
 			}
@@ -567,7 +611,7 @@ const deleteActivity = async (req, res) => {
 				if (searchCategory) {
 					const searchActivity = await prisma.activities.findFirst({
 						where: {
-							id: id,
+							id: parseInt(id),
 							user_id: searchUser.id,
 							category_id: searchCategory.id,
 						},
@@ -617,7 +661,7 @@ const updateStatusCompleted = async (req, res) => {
 			return response(400, "Missing required datas", null, "Bad request", res);
 		}
 		if (userId && id && category && req.body) {
-			const searchUser = searchUserById(userId)
+			const searchUser = searchUserById(userId);
 			if (!searchUser) {
 				return response(404, "No datas user", null, "Not found", res);
 			}
@@ -681,7 +725,7 @@ const updateStatusCompleted = async (req, res) => {
 };
 
 export default {
-	getActivities,
+	getActivitiesByDateNow,
 	getActivitiesByUser,
 	createActivity,
 	updateActivity,

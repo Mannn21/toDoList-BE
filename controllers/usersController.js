@@ -57,6 +57,7 @@ const getUserByEmail = async (req, res) => {
 					name: search.name,
 					email: search.email,
 					status: search.status,
+					create: search.createdAt,
 				};
 				return response(200, "Find user success", data, "Ok", res);
 			} catch (err) {
@@ -162,8 +163,8 @@ const createUser = async (req, res) => {
 
 const updateUser = async (req, res) => {
 	try {
-		const { name, email, password } = req.body;
-		if (!name || !email || !password) {
+		const { name, email, password, newPassword, confNewPassword } = req.body;
+		if (!email || !password) {
 			return response(400, "Missing required datas", null, "Bad request", res);
 		}
 		const validEmail = /^\w+([.-]?\w+)*@\w+([.-]?\w+)*(\.\w{2,3})+$/;
@@ -187,18 +188,64 @@ const updateUser = async (req, res) => {
 					);
 				}
 				if (compare) {
-					if (name === search.name) {
-						return response(200, "No data Updates", null, "Ok", res);
+					if (email && password && name && !newPassword && !confNewPassword) {
+						if (name === search.name) {
+							return response(200, "No data Updates", null, "Ok", res);
+						}
+						if (name !== search.name) {
+							const update = await prisma.user.update({
+								where: { email: search.email },
+								data: { name },
+							});
+							const data = {
+								name: update.name,
+							};
+							return response(200, "Updated Success", data, "Ok", res);
+						}
 					}
-					if (name !== search.name) {
-						const update = await prisma.user.update({
-							where: { email: search.email },
-							data: { name },
-						});
-						const data = {
-							name: update.name,
-						};
-						return response(200, "Updated Success", data, "Ok", res);
+					if (email && password && !name && newPassword && confNewPassword) {
+						const compare = await bcrypt.compare(newPassword, search.password);
+						if (compare) {
+							return response(200, "No data Updates", null, "Ok", res);
+						}
+						if (!compare) {
+							const check = newPassword === confNewPassword;
+							if (check) {
+								const encryptedPassword = await bcrypt.hash(
+									confNewPassword,
+									10
+								);
+								if (!encryptedPassword) {
+									return response(
+										500,
+										"Generate Password error",
+										null,
+										"Internal server error",
+										res
+									);
+								}
+								if (encryptedPassword) {
+									const update = await prisma.user.update({
+										where: { email: search.email },
+										data: { password: encryptedPassword },
+									});
+									const data = {
+										name: update.name,
+										email: update.email,
+									};
+									return response(200, "Updated Success", data, "Ok", res);
+								}
+							}
+							if (!check) {
+								return response(
+									400,
+									"Password not compare",
+									null,
+									"Bad request",
+									res
+								);
+							}
+						}
 					}
 				}
 			} catch (err) {
@@ -335,7 +382,7 @@ const login = async (req, res) => {
 								email: email,
 							},
 						});
-						res.cookie(`refresh_token`, refreshToken, {
+						res.cookie(`refreshToken`, refreshToken, {
 							httpOnly: true,
 							maxAge: 24 * 60 * 60 * 1000,
 						});
@@ -351,6 +398,10 @@ const login = async (req, res) => {
 								refresh_token: refreshToken,
 								expired_time: expiredTime,
 							},
+						});
+						res.cookie(`refreshToken`, refreshToken, {
+							httpOnly: true,
+							maxAge: 24 * 60 * 60 * 1000,
 						});
 						return response(201, "Login Success", accessToken, "Ok", res);
 					}
@@ -382,12 +433,11 @@ const login = async (req, res) => {
 const getRefreshToken = async (req, res) => {
 	try {
 		const { userId } = req.session;
-		const refreshToken = req.cookies.refresh_token;
-
+		const refreshToken = req.cookies.refreshToken;
 		if (!userId || !refreshToken) {
 			return response(401, "Please login first", null, "Unauthorized", res);
 		}
-		if (userId && refreshToken) {
+		if (refreshToken) {
 			const search = await prisma.login.findFirst({
 				where: {
 					user_id: userId,
@@ -463,8 +513,7 @@ const getRefreshToken = async (req, res) => {
 const logout = async (req, res) => {
 	try {
 		const { userId } = req.session;
-		const refreshToken = req.cookies.refresh_token;
-
+		const refreshToken = req.cookies.refreshToken;
 		if (!userId || !refreshToken) {
 			return response(401, "Please login first", null, "Unauthorized", res);
 		}
@@ -490,7 +539,6 @@ const logout = async (req, res) => {
 							return response(400, "Logout failed", null, "Bad request", res);
 						return response(200, "Logout success", null, "Ok", res);
 					});
-					return response(200, "Logout success", null, "Ok", res);
 				} catch (err) {
 					return response(500, err.message, null, "Internal server error", res);
 				}
